@@ -19,7 +19,7 @@ bool read_file( vector<string> *buffer, const string &filename ) {
       file >> tmp;
       buffer->push_back(tmp);
     }
-    buffer->pop_back();  //TODO: find the cause of the doubled 'main' in the end of file
+    buffer->pop_back();  //TODO: find the cause of the doubled 'main' in the end of file in the first sample
 
     file.close();
     return true;
@@ -33,9 +33,9 @@ void vec_print( const vector<string> &buffer ) {
   cout << endl;
 }
 
-class Operations {
+class Commands {
 protected:
-  enum operation_code {
+  enum command_code {
     HALT = 0,
     SYSCALL = 1,
     ADD = 2,
@@ -87,18 +87,21 @@ protected:
     LOADR = 68,
     LOADR2 = 69,
     STORER = 70,
-    STORER2 = 71
+    STORER2 = 71,
+    WORD = 72, // directive
+    END = 73   // directive
   };
-  enum operation_type {
+  enum command_type {
     RM = 0,
     RR = 1,
     RI = 2,
-    J = 3
+    J = 3,
+    D = 4  // directive format
   };
 
-  typedef pair<operation_code, operation_type> Operation;
+  typedef pair<command_code, command_type> Command;
 
-  map<string, Operation> operator_dictionary = {
+  map<string, Command> command_dictionary = {
     {"halt",    {HALT, RI}},
     {"syscall", {SYSCALL, RI}},
     {"add",     {ADD, RR}},
@@ -132,7 +135,7 @@ protected:
     {"pop",     {POP, RI}},
     {"call",    {CALL, RR}},
     {"calli",   {CALLI, J}},
-    {"ret",     {RET, J}},  //TODO: 'ret' usage in examples does not fit the 'RI' type
+    {"ret",     {RET, J}},    //TODO: 'ret' usage in examples does not fit the 'RI' type
     {"cmp",     {CMP, RR}},
     {"cmpi",    {CMPI, RI}},
     {"cmpd",    {CMPD, RR}},
@@ -150,21 +153,121 @@ protected:
     {"loadr",   {LOADR, RR}},
     {"storer",  {STORER, RR}},
     {"loadr2",  {LOADR2, RR}},
-    {"storer2", {STORER2, RR}}
+    {"storer2", {STORER2, RR}},
+    {"word",    {WORD, D}},
+    {"end",     {END, D}}
   };
 
-};
+  map<int, string> debug_comm_dictionary {
+    {0, "halt"},
+    {1, "syscall"},
+    {2, "add"},
+    {3, "addi"},
+    {4, "sub"},
+    {5, "subi"},
+    {6, "mul"},
+    {7, "muli"},
+    {8, "div"},
+    {9, "divi"},
+    {12, "lc"},
+    {13, "shl"},
+    {14, "shli"},
+    {15, "shr"},
+    {16, "shri"},
+    {17, "and"},
+    {18, "andi"},
+    {19, "or"},
+    {20, "ori"},
+    {21, "xor"},
+    {22, "xori"},
+    {23, "not"},
+    {24, "mov"},
+    {32, "addd"},
+    {33, "subd"},
+    {34, "muld"},
+    {35, "divd"},
+    {36, "itod"},
+    {37, "dtoi"},
+    {38, "push"},
+    {39, "pop"},
+    {40, "call"},
+    {41, "calli"},
+    {42, "ret"},
+    {43, "cmp"},
+    {44, "cmpi"},
+    {45, "cmpd"},
+    {46, "jmp"},
+    {47, "jne"},
+    {48, "jeq"},
+    {49, "jle"},
+    {50, "jl"},
+    {51, "jge"},
+    {52, "jg"},
+    {64, "load"},
+    {65, "store"},
+    {66, "load2"},
+    {67, "store2"},
+    {68, "loadr"},
+    {69, "loadr2"},
+    {70, "storer"},
+    {71, "storer2"},
+    {72, "word"},
+    {73, "end"}
+  };
 
-class FUPM2 : private Operations {
+  /***
+   * Functions for getting operands and register numbers from 32-bit command words in memory.
+   ***/
+
+  static int get_RM_operand( unsigned const &command ) {
+    return (int)(command >> 12u);
+  }
+
+  static unsigned get_RM_reg_num( unsigned const &command ) {
+    return command << 20u >> 28u;
+  }
+
+  static int get_RR_operand( unsigned const &command ) {
+    unsigned bit_mask = command >> 31u ? 1048575u << 16u : 0;
+    return (int)((command >> 16u) | bit_mask);
+  }
+
+  static unsigned get_RR_first_reg_num( unsigned const &command ) {
+    return command << 20u >> 28u;
+  }
+
+  static unsigned get_RR_second_reg_num( unsigned const &command ) {
+    return command << 16u >> 28u;
+  }
+
+  static int get_RI_operand( unsigned const &command ) {
+    unsigned bit_mask = command >> 31u ? 4095u << 20u : 0;
+    return (int)((command >> 12u) | bit_mask);
+  }
+
+  static unsigned get_RI_reg_num( unsigned const &command ) {
+    return command << 20u >> 28u;
+  }
+
+  static int get_J_operand( unsigned const &command ) {
+    return (int)(command >> 12u);
+  }
+
+  /***
+   ***
+   ***/
+};
+/* End of 'Operaitons' class */
+
+class FUPM2 : private Commands {
 private:
   vector<unsigned> memory;
-  vector<unsigned> registers;
+  vector<int> r;
   map<string, int> labels;
-  int program_enter_point;
   int flags;
   int error_line;
 
-  map<string, unsigned> register_dictionary = {
+  map<string, int> register_dictionary = {
     {"r0", 0},
     {"r1", 1},
     {"r2", 2},
@@ -183,76 +286,170 @@ private:
     {"r15", 15},
   };
 
+  map <int, string> debug_reg_dictionary = {
+    {0, "r0"},
+    {1, "r1"},
+    {2, "r2"},
+    {3, "r3"},
+    {4, "r4"},
+    {5, "r5"},
+    {6, "r6"},
+    {7, "r7"},
+    {8, "r8"},
+    {9, "r9"},
+    {10, "r10"},
+    {11, "r11"},
+    {12, "r12"},
+    {13, "r13"},
+    {14, "r14"},
+    {15, "r15"}
+  };
+
+  enum system_call {
+    EXIT = 0,
+    SCANINT = 100,
+    SCANDOUBLE = 101,
+    PRINTINT = 102,
+    PRINTDOUBLE = 103,
+    GETCHAR = 104,
+    PUTCHAR = 105
+  };
+
+  /***
+   * decode_word Decodes 32-bit word from the inner representation of 'FUPM2OS'.
+   * @param word Unsigned integer constant which contains word.
+   * @param type command_type constant which contains the type of command in word param.
+   */
+  void decode_word( const unsigned &word, const command_type &type ) {
+    switch (type) {
+      case RM: {
+       /* cout << "Command code: " << ((word << 24u) >> 24u) << endl;
+        cout << "Register code: " << ((word << 20u) >> 28u) << endl;
+        cout << "Modificator: " << (word >> 12u) << endl << endl;*/
+        cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " " << (word >> 12u) << endl;
+        break;
+      }
+
+      case RR: {
+        /*cout << "Command code: " << ((word << 24u) >> 24u) << endl;
+        cout << "Register #1 code: " << ((word << 20u) >> 28u) << endl;
+        cout << "Register #2 code: " << ((word << 16u) >> 28u) << endl;
+        cout << "Modificator: " << (word >> 16u) << endl << endl;*/
+        unsigned lead_bit_mask = word >> 31u ? 1048575u << 16u : 0;
+        cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " "
+             << debug_reg_dictionary[((word << 16u) >> 28u)] << " " << (signed int)(word >> 16u | lead_bit_mask) << endl;
+        break;
+      }
+
+      case RI: {
+       /*  cout << "Command code: " << ((word << 24u) >> 24u) << endl;
+        cout << "Register code: " << ((word << 20u) >> 28u) << endl;
+        cout << "Modificator: " << (signed int)(word >> 12u) << endl << endl;*/
+        unsigned lead_bit_mask = word >> 31u ? 4095u << 20u : 0;
+        cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " "
+             << (signed int)((word >> 12u) | lead_bit_mask) << endl;
+
+        break;
+      }
+
+      case J: {
+        /*cout << "Command code: " << ((word << 24u) >> 24u) << endl;
+        cout << "Modificator: " << (word >> 12u) << endl << endl;*/
+        cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << (word >> 12u) << endl;
+        break;
+      }
+
+      default:
+        ;
+    }
+  }
+  /* End of 'decode_word' function */
+
+  /**
+   * parser Converts assembler code in the text file to the inner representation of 'FUPM2OS'.
+   * @param filename String constant which contains the name of file with assembler code.
+   * @return The result of command: 'true' if successful, 'false' otherwise.
+   */
   bool parser( const string &filename ) {
     vector<string> buffer;
+
     if (read_file(&buffer, filename)) {
       vec_print(buffer);
 
-      int current_word_number = 0;
       auto word = memory.begin();
 
       for (auto word_part = buffer.begin(); word_part != buffer.end(); ) {
         // label check
         if (word_part->back() == ':') {
           word_part->pop_back();
-          labels[*word_part] = current_word_number;
-          cout << "Label '" << *word_part << "' " << "refers to line " << current_word_number << endl;
-          word_part++;
+          labels[*word_part] = word - memory.begin();
+          cout << "Label '" << *word_part++ << "' " << "refers to line " << word - memory.begin() << endl;
         }
 
         else {
-          if (operator_dictionary.find(*word_part) == operator_dictionary.end()) {
-            if (*word_part++ == "end") {
-              program_enter_point = isdigit((*word_part)[0]) ? (unsigned)(stoi(*word_part++)) : labels[*word_part++];
-              if (word_part != buffer.end()) {
-                cout << "error in line" << current_word_number << ": code after 'end' label" << endl; //TODO: edit
-                return false;
-              }
-              return true;
-            }
-            cout << "error in line " << current_word_number << " : No appropriate operator for expression '"
+          if (command_dictionary.find(*word_part) == command_dictionary.end()) {
+            cout << "error in line " << word - memory.begin() << " : No appropriate command for expression '"
                  << *word_part << "'" << endl; //TODO: edit
             buffer.clear();
             return false;
           }
 
-          /*operation_code current_operation_code = operator_dictionary[word_part].first;
-          operation_type current_operation_type = operator_dictionary[word_part].second;*/
-          Operation current_operation = operator_dictionary[*word_part++];
-          current_word_number++;
+          /*command_code current_command_code = command_dictionary[word_part].first;
+          command_type current_command_type = command_dictionary[word_part].second;*/
+          Command current_command = command_dictionary[*word_part++];
 
 
-          switch (current_operation.second) {
+          switch (current_command.second) {
             case RM: {
-              auto register_code = (unsigned) (register_dictionary[*word_part++]);
-              auto operator_modificator = (unsigned) (stoi(*word_part++));
-              memory.insert(word++, ((unsigned) current_operation.first) | (register_code << 8u) |
-                                    (operator_modificator << 12u));
+              auto register_code = (unsigned)register_dictionary[*word_part++];
+              auto command_modificator = (unsigned)(stoi(*word_part++));
+              memory.insert(word++, ((unsigned)current_command.first) | (register_code << 8u) |
+                                    (command_modificator << 12u));
+              decode_word(*(word-1), RM);
               break;
             }
 
             case RR: {
-              auto first_register_code = (unsigned) register_dictionary[*word_part++];
+              auto first_register_code = (unsigned)register_dictionary[*word_part++];
               auto second_register_code = (unsigned) register_dictionary[*word_part++];
-              signed short operator_modificator;
-              sscanf((*word_part++).c_str(), "%hd", &operator_modificator); //TODO: find not c-style solution
-              memory.insert(word++, ((unsigned) current_operation.first) | (first_register_code << 8u) |
-                                    (second_register_code << 12u) | ((unsigned) operator_modificator << 16u));
+              auto command_modificator = (unsigned)(stoi(*word_part++));;
+              memory.insert(word++, ((unsigned) current_command.first) | (first_register_code << 8u) |
+                                    (second_register_code << 12u) | ((unsigned) command_modificator << 16u));
+              decode_word(*(word-1), RR);
               break;
             }
 
             case RI: {
-              auto register_code = (unsigned) (register_dictionary[*word_part++]);
-              auto operator_modificator = stoi(*word_part++); //TODO: how to obtain 20-bit number??????????
-              memory.insert(word++, ((unsigned) current_operation.first) | (register_code << 8u) |
-                                    ((unsigned) operator_modificator << 12u));
+              auto register_code = (unsigned)(register_dictionary[*word_part++]);
+              auto command_modificator = stoi(*word_part++);
+              memory.insert(word++, ((unsigned) current_command.first) | (register_code << 8u) |
+                                    ((unsigned) command_modificator << 12u));
+              decode_word(*(word-1), RI);
+              //unsigned lead_bit_mask = *(word-1) >> 31u ? 4095u << 20u : 0;
+              //cout << (signed int)((*(word-1) >> 12u) | lead_bit_mask) << endl; //TODO: why it did not work: "(*(word-1) >> 31u) ? 4095u << 20u : 0u) << endl;" ?
               break;
             }
 
             case J: {
               //TODO: labels can be modificators e.g. 'calli' uses labels
-              auto operator_modificator = isdigit((*word_part)[0]) ? (unsigned)(stoi(*word_part++)) : labels[*word_part++];
-              memory.insert(word++, ((unsigned) current_operation.first) | (operator_modificator << 12u));
+              auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)(stoi(*word_part++)) : labels[*word_part++];
+              memory.insert(word++, ((unsigned) current_command.first) | (command_modificator << 12u));
+              decode_word(*(word-1), J);
+              break;
+            }
+
+            case D: {
+              if (current_command.first == WORD) {
+                memory.insert(word++, WORD);
+              }
+              else if (current_command.first == END) {
+                r[15] = isdigit((*word_part)[0]) ? stoi(*word_part++) : labels[*word_part++];
+                memory.insert(word, END); // word was not incremented and points to the end of the used memory part
+                if (word_part != buffer.end()) {
+                  cout << "error in line" << word - memory.begin() << ": code after 'end' label" << endl; //TODO: edit
+                  return false;
+                }
+              }
               break;
             }
 
@@ -268,12 +465,352 @@ private:
 
     return false;
   }
+  /* End of 'parser' function */
+
+
+  /**
+   * program_run initiates and runs the execution of the sequence of commands in the memory.
+   */
+  void program_run() {
+    while(true) {
+      unsigned curr_comm = memory[r[15]];
+      switch (curr_comm & 255u) {
+        case HALT: {
+          cout << "HALT" << endl;
+          break;
+        }
+
+        case SYSCALL: {
+          cout << "SYSCALL " << get_RI_operand(curr_comm) << endl;
+          int curr_reg = get_RI_reg_num(curr_comm);
+          switch (get_RI_operand(curr_comm)) {
+            case EXIT: {
+              break;
+            }
+
+            case SCANINT: {
+              scanf("%i", &r[curr_reg]);
+              break;
+            }
+
+            case SCANDOUBLE: {
+              // TODO: how to scan one 64-bit double in two 32-bit registers?
+              // TODO: as two registers are used it is necessary curr_reg < 12
+              break;
+            }
+
+            case PRINTINT: {
+              printf("%i", r[curr_reg]);
+              break;
+            }
+
+            case PRINTDOUBLE: {
+              break;
+            }
+
+            case GETCHAR: {
+              char tmp;
+              scanf("%c", &tmp);
+              r[curr_reg] = tmp;
+              break;
+            }
+
+            case PUTCHAR: {
+              printf("%c", r[curr_reg]);
+              break;
+            }
+
+            default: {
+              cout << "ERROR: No appropriate system call code. Memory address: " << r[15] << endl;
+              return;
+            }
+          }
+
+          r[15]++;
+          break;
+        }
+
+        case ADD: {
+          cout << "ADD" << endl;
+          r[get_RR_first_reg_num(curr_comm)] += r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
+          r[15]++;
+          break;
+        }
+
+        case ADDI: {
+          cout << "ADDI" << endl;
+          r[get_RI_reg_num(curr_comm)] += r[get_RI_operand(curr_comm)];
+          r[15]++;
+          break;
+        }
+
+        case SUB: {
+          cout << "SUB" << endl;
+          r[get_RR_first_reg_num(curr_comm)] -= r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
+          r[15]++;
+          break;
+        }
+
+        case SUBI: {
+          cout << "SUBI" << endl;
+          r[get_RI_reg_num(curr_comm)] -= r[get_RI_operand(curr_comm)];
+          r[15]++;
+          break;
+        }
+
+        case MUL: {
+          cout << "MUL" << endl;
+          r[15]++;
+          break;
+        }
+
+        case MULI: {
+          cout << "MULI" << endl;
+          r[15]++;
+          break;
+        }
+
+        case DIV: {
+          cout << "DIV" << endl;
+          r[15]++;
+          break;
+        }
+
+        case DIVI: {
+          cout << "DIVI" << endl;
+          r[15]++;
+          break;
+        }
+
+        case LC: {
+          cout << "LC" << endl;
+          r[15]++;
+          break;
+        }
+
+        case SHL: {
+          cout << "SHL" << endl;
+          r[15]++;
+          break;
+        }
+
+        case SHLI: {
+          cout << "SHLI" << endl;
+          r[15]++;
+          break;
+        }
+
+        case SHR: {
+          cout << "SHR" << endl;
+          r[15]++;
+          break;
+        }
+
+        case SHRI: {
+          cout << "SHRI" << endl;
+          break;
+        }
+
+        case AND: {
+          cout << "AND" << endl;
+          break;
+        }
+
+        case ANDI: {
+          cout << "ANDI" << endl;
+          break;
+        }
+
+        case OR: {
+          cout << "OR" << endl;
+          break;
+        }
+
+        case ORI: {
+          cout << "ORI" << endl;
+          break;
+        }
+
+        case XOR: {
+          cout << "XOR" << endl;
+          break;
+        }
+
+        case XORI: {
+          cout << "XORI" << endl;
+          break;
+        }
+
+        case NOT: {
+          cout << "NOT" << endl;
+          break;
+        }
+
+        case MOV: {
+          cout << "MOV" << endl;
+          break;
+        }
+
+        case ADDD: {
+          cout << "ADDD" << endl;
+          break;
+        }
+
+        case SUBD: {
+          cout << "SUBD" << endl;
+          break;
+        }
+
+        case MULD: {
+          cout << "MULD" << endl;
+          break;
+        }
+
+        case DIVD: {
+          cout << "DIVD" << endl;
+          break;
+        }
+
+        case ITOD: {
+          cout << "ITOD" << endl;
+          break;
+        }
+
+        case DTOI: {
+          cout << "DTOI" << endl;
+          break;
+        }
+
+        case PUSH: {
+          cout << "PUSH" << endl;
+          break;
+        }
+
+        case POP: {
+          cout << "POP" << endl;
+          break;
+        }
+
+        case CALL: {
+          cout << "CALL" << endl;
+          break;
+        }
+
+        case CALLI: {
+          cout << "CALLI" << endl;
+          break;
+        }
+
+        case RET: {
+          cout << "RET" << endl;
+          break;
+        }
+
+        case CMP: {
+          cout << "CMP" << endl;
+          break;
+        }
+
+        case CMPI: {
+          cout << "CMPI" << endl;
+          break;
+        }
+
+        case CMPD: {
+          cout << "CMPD" << endl;
+          break;
+        }
+
+        case JMP: {
+          cout << "JMP" << endl;
+          break;
+        }
+
+        case JNE: {
+          cout << "JNE" << endl;
+          break;
+        }
+
+        case JEQ: {
+          cout << "JEQ" << endl;
+          break;
+        }
+
+        case JLE: {
+          cout << "JLE" << endl;
+          break;
+        }
+
+        case JL: {
+          cout << "JL" << endl;
+          break;
+        }
+
+        case JGE: {
+          cout << "JGE" << endl;
+          break;
+        }
+
+        case JG: {
+          cout << "JG" << endl;
+          break;
+        }
+
+        case LOAD: {
+          cout << "LOAD" << endl;
+          break;
+        }
+
+        case STORE: {
+          cout << "STORE" << endl;
+          break;
+        }
+
+        case LOAD2: {
+          cout << "LOAD2" << endl;
+          break;
+        }
+
+        case STORE2: {
+          cout << "STORE2" << endl;
+          break;
+        }
+
+        case LOADR: {
+          cout << "LOADR" << endl;
+          break;
+        }
+
+        case LOADR2: {
+          cout << "LOADR2" << endl;
+          break;
+        }
+
+        case STORER: {
+          cout << "STORER" << endl;
+          break;
+        }
+
+
+        case STORER2: {
+          cout << "STORER2" << endl;
+          break;
+        }
+        default: {
+          return;
+        }
+      }
+    }
+  }
+  /* End of 'program_run' function */
+
+
 
 public:
   FUPM2() {
     memory.reserve(1u<<20u);
-    registers.resize(16);
-    registers[14] = (1u<<20u) - 1;
+    r.resize(16);
+    r[14] = (1u<<20u) - 1;
     flags = 0;
 
     if (!parser("input.fasm")) {
@@ -285,18 +822,18 @@ public:
     cout << "Memory reserved: " << memory.capacity() << endl;
     cout << "Memory used: " << memory.size() << endl;
     cout << "Registers:" << endl;
-    for (int i = 0; i < registers.size(); i++) {
-      cout << "  " << "r" << i << ": " << registers[i] << endl;
+    for (int i = 0; i < r.size(); i++) {
+      cout << "  " << "r" << i << ": " << r[i] << endl;
     }
     cout << "  " << "Flags: " << flags << endl;
-    cout << "  " << "Size of one register is " << sizeof(registers[0]) << " bytes" << endl;
+    cout << "  " << "Size of one register is " << sizeof(r[0]) << " bytes" << endl;
   }
 };
 
 int main()
 {
-  FUPM2 Instance;
-  Instance.get_mem_info();
+  /*FUPM2 Instance;
+  Instance.get_mem_info();*/
 
 /*  auto tmp = -123;
   auto tmp1 = (unsigned)tmp;
@@ -315,6 +852,30 @@ int main()
   tmp = (unsigned int)tmp >> 2u;
   cout  << (int)tmp;*/
 
+  /*for (int i = 0; i < 52; i++) {
+    string tmp;
+    cin >> tmp;
+    transform(tmp.begin(), tmp.end(), tmp.begin(), ::tolower);
+    cout << "{" << Instance.command_dictionary[tmp].first << ", \"" << tmp << "\"}," << endl;
+  }*/
+
+  /*for (int i = 0; i < 16; i++) {
+    cout << "{" << i << ", \"r" << i << "\"}," << endl;
+  }*/
+  /*unsigned int a = 1;
+  for (int i = 1; i <= 12; i++) {
+    cout << i << " - " << a << endl;
+    a <<= 1u;
+    a |= 1u;
+  }*/
+
+  for (int i = 0; i < 52; i++) {
+    string tmp;
+    cin >> tmp;
+    cout << "case " << tmp << ": {" << endl;
+    cout << "  cout << \"" << tmp << "\" << endl;" << endl;
+    cout << "  break;" << endl << "}" << endl << endl;
+  }
 
   return 0;
 }
