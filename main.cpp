@@ -359,6 +359,11 @@ private:
         break;
       }
 
+      case D: {
+        cout << debug_comm_dictionary[word] << endl;
+        break;
+      }
+
       default:
         ;
     }
@@ -376,36 +381,50 @@ private:
     if (read_file(&buffer, filename)) {
       vec_print(buffer);
 
-      auto word = memory.begin();
+      auto curr_word = memory.begin();
 
+      // creating map of labels
       for (auto word_part = buffer.begin(); word_part != buffer.end(); ) {
-        // label check
         if (word_part->back() == ':') {
+          if (isdigit((*word_part)[0])) {
+            cout << "error in line " << curr_word - memory.begin() << " : Label begins with numeral" << endl; // TODO: write error function
+            return false;
+          }
           word_part->pop_back();
-          labels[*word_part] = word - memory.begin();
-          cout << "Label '" << *word_part++ << "' " << "refers to line " << word - memory.begin() << endl;
+          labels[*word_part] = curr_word - memory.begin();
+          cout << "Label '" << *word_part << "' " << "refers to line " << curr_word - memory.begin() << endl;
+          word_part->push_back(':');
+          word_part++;
         }
+        else if (command_dictionary.find(*word_part++) != command_dictionary.end()) {
+          curr_word++;
+        }
+      }
+      cout << endl;
 
+      // obtaining commands
+      curr_word = memory.begin();
+      for (auto word_part = buffer.begin(); word_part != buffer.end(); ) {
+        if (word_part->back() == ':') {       // label check
+          cout << *word_part++ << endl;
+        }
         else {
           if (command_dictionary.find(*word_part) == command_dictionary.end()) {
-            cout << "error in line " << word - memory.begin() << " : No appropriate command for expression '"
+            cout << "error in line " << curr_word - memory.begin() << " : No appropriate command for expression '"
                  << *word_part << "'" << endl; //TODO: edit
             buffer.clear();
             return false;
           }
 
-          /*command_code current_command_code = command_dictionary[word_part].first;
-          command_type current_command_type = command_dictionary[word_part].second;*/
           Command current_command = command_dictionary[*word_part++];
-
 
           switch (current_command.second) {
             case RM: {
               auto register_code = (unsigned)register_dictionary[*word_part++];
-              auto command_modificator = (unsigned)(stoi(*word_part++));
-              memory.insert(word++, ((unsigned)current_command.first) | (register_code << 8u) |
+              auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)stoi(*word_part++) : labels[*word_part++];
+              memory.insert(curr_word++, ((unsigned)current_command.first) | (register_code << 8u) |
                                     (command_modificator << 12u));
-              decode_word(*(word-1), RM);
+              decode_word(*(curr_word-1), RM);
               break;
             }
 
@@ -413,40 +432,41 @@ private:
               auto first_register_code = (unsigned)register_dictionary[*word_part++];
               auto second_register_code = (unsigned) register_dictionary[*word_part++];
               auto command_modificator = (unsigned)(stoi(*word_part++));;
-              memory.insert(word++, ((unsigned) current_command.first) | (first_register_code << 8u) |
+              memory.insert(curr_word++, ((unsigned) current_command.first) | (first_register_code << 8u) |
                                     (second_register_code << 12u) | ((unsigned) command_modificator << 16u));
-              decode_word(*(word-1), RR);
+              decode_word(*(curr_word-1), RR);
               break;
             }
 
             case RI: {
               auto register_code = (unsigned)(register_dictionary[*word_part++]);
               auto command_modificator = stoi(*word_part++);
-              memory.insert(word++, ((unsigned) current_command.first) | (register_code << 8u) |
+              memory.insert(curr_word++, ((unsigned) current_command.first) | (register_code << 8u) |
                                     ((unsigned) command_modificator << 12u));
-              decode_word(*(word-1), RI);
-              //unsigned lead_bit_mask = *(word-1) >> 31u ? 4095u << 20u : 0;
-              //cout << (signed int)((*(word-1) >> 12u) | lead_bit_mask) << endl; //TODO: why it did not work: "(*(word-1) >> 31u) ? 4095u << 20u : 0u) << endl;" ?
+              decode_word(*(curr_word-1), RI);
+              //unsigned lead_bit_mask = *(curr_word-1) >> 31u ? 4095u << 20u : 0;
+              //cout << (signed int)((*(curr_word-1) >> 12u) | lead_bit_mask) << endl; //TODO: why it did not work: "(*(curr_word-1) >> 31u) ? 4095u << 20u : 0u) << endl;" ?
               break;
             }
 
             case J: {
-              //TODO: labels can be modificators e.g. 'calli' uses labels
               auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)(stoi(*word_part++)) : labels[*word_part++];
-              memory.insert(word++, ((unsigned) current_command.first) | (command_modificator << 12u));
-              decode_word(*(word-1), J);
+              memory.insert(curr_word++, ((unsigned) current_command.first) | (command_modificator << 12u));
+              decode_word(*(curr_word-1), J);
               break;
             }
 
             case D: {
               if (current_command.first == WORD) {
-                memory.insert(word++, WORD);
+                memory.insert(curr_word++, WORD);
+                decode_word(*(curr_word-1), D);
               }
               else if (current_command.first == END) {
                 r[15] = isdigit((*word_part)[0]) ? stoi(*word_part++) : labels[*word_part++];
-                memory.insert(word, END); // word was not incremented and points to the end of the used memory part
+                memory.insert(curr_word, END); // curr_word was not incremented and points to the end of the used memory part
+                decode_word(*(curr_word), D);
                 if (word_part != buffer.end()) {
-                  cout << "error in line" << word - memory.begin() << ": code after 'end' label" << endl; //TODO: edit
+                  cout << "error in line" << curr_word - memory.begin() << ": code after 'end' label" << endl; //TODO: edit
                   return false;
                 }
               }
@@ -466,7 +486,6 @@ private:
     return false;
   }
   /* End of 'parser' function */
-
 
   /**
    * program_run initiates and runs the execution of the sequence of commands in the memory.
@@ -584,70 +603,98 @@ private:
 
         case LC: {
           cout << "LC" << endl;
+          r[get_RI_reg_num(curr_comm)] = get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
+        // TODO: how to shift signed numbers, looking at sign bit or not?
         case SHL: {
           cout << "SHL" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] <<
+                                               (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
           break;
         }
 
         case SHLI: {
           cout << "SHLI" << endl;
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] << (unsigned)r[get_RI_operand(curr_comm)];
           r[15]++;
           break;
         }
 
         case SHR: {
           cout << "SHR" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] >>
+                                               (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
           break;
         }
 
         case SHRI: {
           cout << "SHRI" << endl;
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] >> (unsigned)r[get_RI_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case AND: {
           cout << "AND" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] &
+                                               (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          r[15]++;
           break;
         }
 
         case ANDI: {
           cout << "ANDI" << endl;
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] & (unsigned)r[get_RI_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case OR: {
           cout << "OR" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] |
+                                               (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          r[15]++;
           break;
         }
 
         case ORI: {
           cout << "ORI" << endl;
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] | (unsigned)r[get_RI_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case XOR: {
           cout << "XOR" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] ^
+                                               (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          r[15]++;
           break;
         }
 
         case XORI: {
           cout << "XORI" << endl;
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] ^ (unsigned)r[get_RI_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case NOT: {
           cout << "NOT" << endl;
+          r[get_RI_reg_num(curr_comm)] = !((unsigned)r[get_RI_reg_num(curr_comm)]);
+          r[15]++;
           break;
         }
 
         case MOV: {
           cout << "MOV" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
+          r[15]++;
           break;
         }
 
@@ -683,21 +730,29 @@ private:
 
         case PUSH: {
           cout << "PUSH" << endl;
+          memory[--r[14]] = r[get_RI_reg_num(curr_comm)] + get_RI_operand(curr_comm);
+          r[15]++;
           break;
         }
 
         case POP: {
           cout << "POP" << endl;
+          r[get_RI_reg_num(curr_comm)] = memory[r[14]++] + get_RI_operand(curr_comm);
+          r[15]++;
           break;
         }
 
         case CALL: {
           cout << "CALL" << endl;
+          memory[--r[14]] = r[get_RR_first_reg_num(curr_comm)] = r[15] + 1;
+          r[15] = r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
           break;
         }
 
         case CALLI: {
           cout << "CALLI" << endl;
+          memory[--r[14]] = r[15] + 1;
+          r[15] = get_J_operand(curr_comm);
           break;
         }
 
@@ -708,11 +763,31 @@ private:
 
         case CMP: {
           cout << "CMP" << endl;
+          if (r[get_RR_first_reg_num(curr_comm)] == r[get_RR_second_reg_num(curr_comm)]) {
+            flags = 0;
+          }
+          else if (r[get_RR_first_reg_num(curr_comm)] > r[get_RR_second_reg_num(curr_comm)]) {
+            flags = 1;
+          }
+          else {
+            flags = -1;
+          }
+          r[15]++;
           break;
         }
 
         case CMPI: {
           cout << "CMPI" << endl;
+          if (r[get_RI_reg_num(curr_comm)] == get_RI_operand(curr_comm)) {
+            flags = 0;
+          }
+          else if (r[get_RI_reg_num(curr_comm)] > get_RI_operand(curr_comm)) {
+            flags = 1;
+          }
+          else {
+            flags = -1;
+          }
+          r[15]++;
           break;
         }
 
@@ -723,79 +798,137 @@ private:
 
         case JMP: {
           cout << "JMP" << endl;
+          r[15] = get_J_operand(curr_comm);
           break;
         }
 
         case JNE: {
           cout << "JNE" << endl;
+          if (flags != 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case JEQ: {
           cout << "JEQ" << endl;
+          if (flags == 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case JLE: {
           cout << "JLE" << endl;
+          if (flags <= 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case JL: {
           cout << "JL" << endl;
+          if (flags < 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case JGE: {
           cout << "JGE" << endl;
+          if (flags >= 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case JG: {
           cout << "JG" << endl;
+          if (flags > 0) {
+            r[15] = get_J_operand(curr_comm);
+          }
+          else {
+            r[15]++;
+          }
           break;
         }
 
         case LOAD: {
           cout << "LOAD" << endl;
+          r[get_RM_reg_num(curr_comm)] = memory[get_RM_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case STORE: {
           cout << "STORE" << endl;
+          memory[get_RM_operand(curr_comm)] = r[get_RM_reg_num(curr_comm)];
+          r[15]++;
           break;
         }
 
         case LOAD2: {
           cout << "LOAD2" << endl;
+          r[get_RM_reg_num(curr_comm)] = memory[get_RM_operand(curr_comm)];
+          r[get_RM_reg_num(curr_comm) + 1] = memory[get_RM_operand(curr_comm) + 1];
+          r[15]++;
           break;
         }
 
         case STORE2: {
           cout << "STORE2" << endl;
+          memory[get_RM_operand(curr_comm)] = r[get_RM_reg_num(curr_comm)];
+          memory[get_RM_operand(curr_comm) + 1] = r[get_RM_reg_num(curr_comm) + 1];
+          r[15]++;
           break;
         }
 
         case LOADR: {
           cout << "LOADR" << endl;
-          break;
-        }
-
-        case LOADR2: {
-          cout << "LOADR2" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)];
+          r[15]++;
           break;
         }
 
         case STORER: {
           cout << "STORER" << endl;
+          memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)] = r[get_RR_first_reg_num(curr_comm)];
+          r[15]++;
+          break;
+        }
+
+        case LOADR2: {
+          cout << "LOADR2" << endl;
+          r[get_RR_first_reg_num(curr_comm)] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)];
+          r[get_RR_first_reg_num(curr_comm) + 1] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm) + 1];
+          r[15]++;
           break;
         }
 
 
         case STORER2: {
           cout << "STORER2" << endl;
+          memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)] = r[get_RR_first_reg_num(curr_comm)];
+          memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm) + 1] = r[get_RR_first_reg_num(curr_comm) + 1];
+          r[15]++;
           break;
         }
+
         default: {
           return;
         }
@@ -832,8 +965,8 @@ public:
 
 int main()
 {
-  /*FUPM2 Instance;
-  Instance.get_mem_info();*/
+  FUPM2 Instance;
+  Instance.get_mem_info();
 
 /*  auto tmp = -123;
   auto tmp1 = (unsigned)tmp;
@@ -869,13 +1002,13 @@ int main()
     a |= 1u;
   }*/
 
-  for (int i = 0; i < 52; i++) {
+ /* for (int i = 0; i < 52; i++) {
     string tmp;
     cin >> tmp;
     cout << "case " << tmp << ": {" << endl;
     cout << "  cout << \"" << tmp << "\" << endl;" << endl;
     cout << "  break;" << endl << "}" << endl << endl;
-  }
+  }*/
 
   return 0;
 }
