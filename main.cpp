@@ -1,5 +1,5 @@
 #include <iostream>
-#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -223,8 +223,8 @@ protected:
     return (int)(command >> 12u);
   }
 
-  static unsigned get_RM_reg_num( unsigned const &command ) {
-    return command << 20u >> 28u;
+  static int get_RM_reg_num( unsigned const &command ) {
+    return (int)(command << 20u >> 28u);
   }
 
   static int get_RR_operand( unsigned const &command ) {
@@ -232,12 +232,12 @@ protected:
     return (int)((command >> 16u) | bit_mask);
   }
 
-  static unsigned get_RR_first_reg_num( unsigned const &command ) {
-    return command << 20u >> 28u;
+  static int get_RR_first_reg_num( unsigned const &command ) {
+    return (int)(command << 20u >> 28u);
   }
 
-  static unsigned get_RR_second_reg_num( unsigned const &command ) {
-    return command << 16u >> 28u;
+  static int get_RR_second_reg_num( unsigned const &command ) {
+    return (int)(command << 16u >> 28u);
   }
 
   static int get_RI_operand( unsigned const &command ) {
@@ -245,12 +245,33 @@ protected:
     return (int)((command >> 12u) | bit_mask);
   }
 
-  static unsigned get_RI_reg_num( unsigned const &command ) {
-    return command << 20u >> 28u;
+  static int get_RI_reg_num( unsigned const &command ) {
+    return (int)(command << 20u >> 28u);
   }
 
   static int get_J_operand( unsigned const &command ) {
     return (int)(command >> 12u);
+  }
+
+  static double cast_two_int_to_double( int const &first, int const &second ) {
+    unsigned long long tmp1 = (unsigned long long)((unsigned)first) | (unsigned long long)((unsigned)second) << 32u;
+    double tmp = *(reinterpret_cast<double*>(&tmp1));
+    return tmp;
+  }
+
+  static void cast_double_to_two_int( double &value, int &first, int &second ) {
+    unsigned long long tmp = *(reinterpret_cast<unsigned long long*>(&value));
+    first = (int)(tmp << 32u >> 32u);  // low-order bytes
+    second = (int)(tmp >> 32u);        // high-order bytes
+  }
+
+  static long long cast_two_int_to_lli( int const &first, int const &second ) {
+    return (long long)((unsigned long long)((unsigned)first) | (unsigned long long)((unsigned)second) << 32u);
+  }
+
+  static void cast_lli_to_two_int( long long &value, int &first, int &second ) {
+    first = (int)((unsigned long long)value << 32u >> 32u);  // low-order bytes
+    second = (int)((unsigned long long)value >> 32u);        // high-order bytes
   }
 
   /***
@@ -265,9 +286,8 @@ private:
   vector<int> r;
   map<string, int> labels;
   int flags;
-  int error_line;
 
-  map<string, int> register_dictionary = {
+  map<string, unsigned> register_dictionary = {
     {"r0", 0},
     {"r1", 1},
     {"r2", 2},
@@ -323,18 +343,11 @@ private:
   void decode_word( const unsigned &word, const command_type &type ) {
     switch (type) {
       case RM: {
-       /* cout << "Command code: " << ((word << 24u) >> 24u) << endl;
-        cout << "Register code: " << ((word << 20u) >> 28u) << endl;
-        cout << "Modificator: " << (word >> 12u) << endl << endl;*/
         cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " " << (word >> 12u) << endl;
         break;
       }
 
       case RR: {
-        /*cout << "Command code: " << ((word << 24u) >> 24u) << endl;
-        cout << "Register #1 code: " << ((word << 20u) >> 28u) << endl;
-        cout << "Register #2 code: " << ((word << 16u) >> 28u) << endl;
-        cout << "Modificator: " << (word >> 16u) << endl << endl;*/
         unsigned lead_bit_mask = word >> 31u ? 1048575u << 16u : 0;
         cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " "
              << debug_reg_dictionary[((word << 16u) >> 28u)] << " " << (signed int)(word >> 16u | lead_bit_mask) << endl;
@@ -342,9 +355,6 @@ private:
       }
 
       case RI: {
-       /*  cout << "Command code: " << ((word << 24u) >> 24u) << endl;
-        cout << "Register code: " << ((word << 20u) >> 28u) << endl;
-        cout << "Modificator: " << (signed int)(word >> 12u) << endl << endl;*/
         unsigned lead_bit_mask = word >> 31u ? 4095u << 20u : 0;
         cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << debug_reg_dictionary[((word << 20u) >> 28u)] << " "
              << (signed int)((word >> 12u) | lead_bit_mask) << endl;
@@ -353,8 +363,6 @@ private:
       }
 
       case J: {
-        /*cout << "Command code: " << ((word << 24u) >> 24u) << endl;
-        cout << "Modificator: " << (word >> 12u) << endl << endl;*/
         cout << debug_comm_dictionary[((word << 24u) >> 24u)] << " " << (word >> 12u) << endl;
         break;
       }
@@ -406,7 +414,9 @@ private:
       curr_word = memory.begin();
       for (auto word_part = buffer.begin(); word_part != buffer.end(); ) {
         if (word_part->back() == ':') {       // label check
-          cout << *word_part++ << endl;
+          // TODO: label print
+          // cout << *word_part++ << endl;
+          word_part++;
         }
         else {
           if (command_dictionary.find(*word_part) == command_dictionary.end()) {
@@ -420,30 +430,30 @@ private:
 
           switch (current_command.second) {
             case RM: {
-              auto register_code = (unsigned)register_dictionary[*word_part++];
+              auto register_code = register_dictionary[*word_part++];
               auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)stoi(*word_part++) : labels[*word_part++];
-              memory.insert(curr_word++, ((unsigned)current_command.first) | (register_code << 8u) |
+              memory.insert(curr_word++, current_command.first | (register_code << 8u) |
                                     (command_modificator << 12u));
-              decode_word(*(curr_word-1), RM);
+              //decode_word(*(curr_word-1), RM);
               break;
             }
 
             case RR: {
-              auto first_register_code = (unsigned)register_dictionary[*word_part++];
-              auto second_register_code = (unsigned) register_dictionary[*word_part++];
+              auto first_register_code = register_dictionary[*word_part++];
+              auto second_register_code = register_dictionary[*word_part++];
               auto command_modificator = (unsigned)(stoi(*word_part++));;
-              memory.insert(curr_word++, ((unsigned) current_command.first) | (first_register_code << 8u) |
-                                    (second_register_code << 12u) | ((unsigned) command_modificator << 16u));
-              decode_word(*(curr_word-1), RR);
+              memory.insert(curr_word++, current_command.first | (first_register_code << 8u) |
+                                    (second_register_code << 12u) | (command_modificator << 16u));
+              //decode_word(*(curr_word-1), RR);
               break;
             }
 
             case RI: {
-              auto register_code = (unsigned)(register_dictionary[*word_part++]);
-              auto command_modificator = stoi(*word_part++);
-              memory.insert(curr_word++, ((unsigned) current_command.first) | (register_code << 8u) |
-                                    ((unsigned) command_modificator << 12u));
-              decode_word(*(curr_word-1), RI);
+              auto register_code = register_dictionary[*word_part++];
+              auto command_modificator = (unsigned)stoi(*word_part++);
+              memory.insert(curr_word++, current_command.first | (register_code << 8u) |
+                                    (command_modificator << 12u));
+              //decode_word(*(curr_word-1), RI);
               //unsigned lead_bit_mask = *(curr_word-1) >> 31u ? 4095u << 20u : 0;
               //cout << (signed int)((*(curr_word-1) >> 12u) | lead_bit_mask) << endl; //TODO: why it did not work: "(*(curr_word-1) >> 31u) ? 4095u << 20u : 0u) << endl;" ?
               break;
@@ -451,20 +461,20 @@ private:
 
             case J: {
               auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)(stoi(*word_part++)) : labels[*word_part++];
-              memory.insert(curr_word++, ((unsigned) current_command.first) | (command_modificator << 12u));
-              decode_word(*(curr_word-1), J);
+              memory.insert(curr_word++, current_command.first | (command_modificator << 12u));
+              //decode_word(*(curr_word-1), J);
               break;
             }
 
             case D: {
               if (current_command.first == WORD) {
                 memory.insert(curr_word++, WORD);
-                decode_word(*(curr_word-1), D);
+                //decode_word(*(curr_word-1), D);
               }
               else if (current_command.first == END) {
                 r[15] = isdigit((*word_part)[0]) ? stoi(*word_part++) : labels[*word_part++];
                 memory.insert(curr_word, END); // curr_word was not incremented and points to the end of the used memory part
-                decode_word(*(curr_word), D);
+                //decode_word(*(curr_word), D);
                 if (word_part != buffer.end()) {
                   cout << "error in line" << curr_word - memory.begin() << ": code after 'end' label" << endl; //TODO: edit
                   return false;
@@ -487,6 +497,38 @@ private:
   }
   /* End of 'parser' function */
 
+
+public:
+  /**
+   * FUPM2 class constructor
+   */
+  FUPM2() {
+    memory.reserve(1u<<20u);
+    r.resize(16);
+    r[14] = (1u<<20u) - 1;
+    flags = 0;
+
+    if (!parser("input.fasm")) {
+      cout << endl << endl << "ERROR!!! Failed to parse file" << endl << endl; //TODO: remove this error message and obtain error
+    }
+  }
+  /* End of 'FUPM2' constructor */
+
+  /**
+   * get_mem_info gives inforamtion about reserved memory size, used memory size and registers values.
+   */
+  void get_mem_info() {
+    cout << "Memory reserved: " << memory.capacity() << endl;
+    cout << "Memory used: " << memory.size() << endl;
+    cout << "Registers:" << endl;
+    for (int i = 0; i < r.size(); i++) {
+      cout << "  " << "r" << i << ": " << r[i] << endl;
+    }
+    cout << "  " << "Flags: " << flags << endl;
+    cout << "  " << "Size of one register is " << sizeof(r[0]) << " bytes" << endl;
+  }
+  /* End of 'get_mem_info' function */
+
   /**
    * program_run initiates and runs the execution of the sequence of commands in the memory.
    */
@@ -496,46 +538,48 @@ private:
       switch (curr_comm & 255u) {
         case HALT: {
           cout << "HALT" << endl;
-          break;
+          return;
         }
 
         case SYSCALL: {
-          cout << "SYSCALL " << get_RI_operand(curr_comm) << endl;
           int curr_reg = get_RI_reg_num(curr_comm);
           switch (get_RI_operand(curr_comm)) {
             case EXIT: {
-              break;
+              return;
             }
 
             case SCANINT: {
-              scanf("%i", &r[curr_reg]);
+              cin >> r[curr_reg];
               break;
             }
 
             case SCANDOUBLE: {
-              // TODO: how to scan one 64-bit double in two 32-bit registers?
-              // TODO: as two registers are used it is necessary curr_reg < 12
+              // TODO: if two registers are used it is necessary curr_reg < 12
+              double tmp;
+              cin >> tmp;
+              cast_double_to_two_int(tmp, (r[curr_reg]), r[curr_reg + 1]);
               break;
             }
 
             case PRINTINT: {
-              printf("%i", r[curr_reg]);
+              cout << r[curr_reg];
               break;
             }
 
             case PRINTDOUBLE: {
+              printf("%lg", cast_two_int_to_double(r[curr_reg], r[curr_reg + 1]));
               break;
             }
 
             case GETCHAR: {
               char tmp;
-              scanf("%c", &tmp);
+              cin >> tmp;
               r[curr_reg] = tmp;
               break;
             }
 
             case PUTCHAR: {
-              printf("%c", r[curr_reg]);
+              cout << (char)r[curr_reg];
               break;
             }
 
@@ -558,7 +602,7 @@ private:
 
         case ADDI: {
           cout << "ADDI" << endl;
-          r[get_RI_reg_num(curr_comm)] += r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] += get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
@@ -572,31 +616,44 @@ private:
 
         case SUBI: {
           cout << "SUBI" << endl;
-          r[get_RI_reg_num(curr_comm)] -= r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] -= get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case MUL: {
           cout << "MUL" << endl;
+          long long tmp = r[get_RR_first_reg_num(curr_comm)] *
+                          ((long long)r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          cast_lli_to_two_int(tmp, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
           r[15]++;
           break;
         }
 
         case MULI: {
           cout << "MULI" << endl;
+          long long tmp = (long long)r[get_RI_reg_num(curr_comm)] * get_RI_operand(curr_comm);
+          cast_lli_to_two_int(tmp, r[get_RI_reg_num(curr_comm)], r[get_RI_reg_num(curr_comm) + 1]);
           r[15]++;
           break;
         }
 
         case DIV: {
           cout << "DIV" << endl;
+          lldiv_t result = div(cast_two_int_to_lli(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]),
+                               (long long)r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          r[get_RR_first_reg_num(curr_comm)] = result.quot;
+          r[get_RR_first_reg_num(curr_comm) + 1] = result.rem;
           r[15]++;
           break;
         }
 
         case DIVI: {
           cout << "DIVI" << endl;
+          lldiv_t result = div(cast_two_int_to_lli(r[get_RI_reg_num(curr_comm)], r[get_RI_reg_num(curr_comm) + 1]),
+                               (long long)get_RI_operand(curr_comm));
+          r[get_RI_reg_num(curr_comm)] = result.quot;
+          r[get_RI_reg_num(curr_comm) + 1] = result.rem;
           r[15]++;
           break;
         }
@@ -608,7 +665,6 @@ private:
           break;
         }
 
-        // TODO: how to shift signed numbers, looking at sign bit or not?
         case SHL: {
           cout << "SHL" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] <<
@@ -619,7 +675,7 @@ private:
 
         case SHLI: {
           cout << "SHLI" << endl;
-          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] << (unsigned)r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] << (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
@@ -634,7 +690,7 @@ private:
 
         case SHRI: {
           cout << "SHRI" << endl;
-          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] >> (unsigned)r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] >> (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
@@ -649,7 +705,7 @@ private:
 
         case ANDI: {
           cout << "ANDI" << endl;
-          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] & (unsigned)r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] & (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
@@ -664,7 +720,7 @@ private:
 
         case ORI: {
           cout << "ORI" << endl;
-          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] | (unsigned)r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] | (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
@@ -679,14 +735,14 @@ private:
 
         case XORI: {
           cout << "XORI" << endl;
-          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] ^ (unsigned)r[get_RI_operand(curr_comm)];
+          r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] ^ (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case NOT: {
           cout << "NOT" << endl;
-          r[get_RI_reg_num(curr_comm)] = !((unsigned)r[get_RI_reg_num(curr_comm)]);
+          r[get_RI_reg_num(curr_comm)] = ~((unsigned)r[get_RI_reg_num(curr_comm)]);
           r[15]++;
           break;
         }
@@ -700,31 +756,60 @@ private:
 
         case ADDD: {
           cout << "ADDD" << endl;
+          double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) +
+                          cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
+                          get_RR_operand(curr_comm);
+          cast_double_to_two_int(result, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
+          r[15]++;
           break;
         }
 
         case SUBD: {
           cout << "SUBD" << endl;
+          double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) -
+                          ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
+                            get_RR_operand(curr_comm) );
+          cast_double_to_two_int(result, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
+          r[15]++;
           break;
         }
 
         case MULD: {
           cout << "MULD" << endl;
+          double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) *
+                          ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
+                            get_RR_operand(curr_comm) );
+          cast_double_to_two_int(result, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
+          r[15]++;
           break;
         }
 
         case DIVD: {
           cout << "DIVD" << endl;
+          double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) /
+                          ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
+                            get_RR_operand(curr_comm) );
+          cast_double_to_two_int(result, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
+          r[15]++;
           break;
         }
 
         case ITOD: {
           cout << "ITOD" << endl;
+          auto tmp = double(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
+          cast_double_to_two_int(tmp,
+                                 r[get_RR_first_reg_num(curr_comm)],
+                                 r[get_RR_first_reg_num(curr_comm) + 1]);
+          r[15]++;
           break;
         }
 
         case DTOI: {
           cout << "DTOI" << endl;
+          auto tmp = cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)],
+                                            r[get_RR_second_reg_num(curr_comm) + 1]) + get_RR_operand(curr_comm);
+          r[get_RR_first_reg_num(curr_comm)] = (int)tmp;
+          r[15]++;
           break;
         }
 
@@ -758,6 +843,8 @@ private:
 
         case RET: {
           cout << "RET" << endl;
+          r[15] = memory[r[14]++];
+          r[14] += get_J_operand(curr_comm);
           break;
         }
 
@@ -793,6 +880,19 @@ private:
 
         case CMPD: {
           cout << "CMPD" << endl;
+          double first = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm ) + 1]);
+          double second = cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm ) + 1]) +
+                          get_RR_operand(curr_comm);
+          if (first == second) {
+            flags = 0;
+          }
+          else if (first > second) {
+            flags = 1;
+          }
+          else {
+            flags = -1;
+          }
+          r[15]++;
           break;
         }
 
@@ -920,7 +1020,6 @@ private:
           break;
         }
 
-
         case STORER2: {
           cout << "STORER2" << endl;
           memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)] = r[get_RR_first_reg_num(curr_comm)];
@@ -937,36 +1036,23 @@ private:
   }
   /* End of 'program_run' function */
 
-
-
-public:
-  FUPM2() {
-    memory.reserve(1u<<20u);
-    r.resize(16);
-    r[14] = (1u<<20u) - 1;
-    flags = 0;
-
-    if (!parser("input.fasm")) {
-      cout << endl << endl << "ERROR!!! Failed to parse file" << endl << endl; //TODO: remove this error message and obtain error
-    }
-  }
-  
-  void get_mem_info() {
-    cout << "Memory reserved: " << memory.capacity() << endl;
-    cout << "Memory used: " << memory.size() << endl;
-    cout << "Registers:" << endl;
-    for (int i = 0; i < r.size(); i++) {
-      cout << "  " << "r" << i << ": " << r[i] << endl;
-    }
-    cout << "  " << "Flags: " << flags << endl;
-    cout << "  " << "Size of one register is " << sizeof(r[0]) << " bytes" << endl;
-  }
 };
+
+int f( int const &var ) {
+  return *(&var);
+}
 
 int main()
 {
   FUPM2 Instance;
-  Instance.get_mem_info();
+  //Instance.get_mem_info();
+  Instance.program_run();
+
+ /* int tmp = 15;
+  int tmp1 = f(tmp);
+  tmp1++;
+  cout << --tmp << endl;
+  cout << tmp1 << endl;*/
 
 /*  auto tmp = -123;
   auto tmp1 = (unsigned)tmp;
@@ -1009,6 +1095,28 @@ int main()
     cout << "  cout << \"" << tmp << "\" << endl;" << endl;
     cout << "  break;" << endl << "}" << endl << endl;
   }*/
-
+/*
+  float tmp = -15.1234;
+  cout << "float representation - " << tmp << endl;
+  unsigned int tmp1 = *(reinterpret_cast<unsigned int*>(&tmp));
+  cout << "unsigned int representation - " << tmp1 << endl;
+  unsigned short tmp2 = *(reinterpret_cast<unsigned short*>(&tmp));
+  cout << "unsigned short representation - " << tmp2 << " (is not appropriate for 4-byte float type)" << endl;
+  int tmp3 = *(reinterpret_cast<int*>(&tmp));
+  cout << "int representation - " << tmp3 << endl;
+  float tmp4 = *(reinterpret_cast<float*>(&tmp1));
+  cout << "reverse cast to float - " << tmp4 << endl;
+  int tmp5 = (int)tmp;
+  cout << "ordinary cast to int - " << tmp5 << endl;
+*/
+/*
+  vector<int> tmp;
+  tmp.reserve(50);
+  for (int i = 0; i < 10; i++) {
+    tmp[i] = i;
+    cout << tmp[i] << endl;
+  }
+  cout << tmp.size();
   return 0;
+  */
 }
