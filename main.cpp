@@ -17,9 +17,19 @@ bool read_file( vector<string> *buffer, const string &filename ) {
 
     while (!file.eof()) {
       file >> tmp;
-      buffer->push_back(tmp);
+      // comment check
+      if (tmp[0] == ';') {
+        char symbol;
+        file.get(symbol);
+        while (symbol != '\n') {
+          file.get(symbol);
+        }
+      }
+      else {
+        buffer->push_back(tmp);
+      }
     }
-    buffer->pop_back();  //TODO: find the cause of the doubled 'main' in the end of file in the first sample
+    buffer->pop_back();
 
     file.close();
     return true;
@@ -387,7 +397,7 @@ private:
     vector<string> buffer;
 
     if (read_file(&buffer, filename)) {
-      vec_print(buffer);
+      //vec_print(buffer);
 
       auto curr_word = memory.begin();
 
@@ -400,7 +410,7 @@ private:
           }
           word_part->pop_back();
           labels[*word_part] = curr_word - memory.begin();
-          cout << "Label '" << *word_part << "' " << "refers to line " << curr_word - memory.begin() << endl;
+          //cout << "Label '" << *word_part << "' " << "refers to line " << curr_word - memory.begin() << endl;
           word_part->push_back(':');
           word_part++;
         }
@@ -450,12 +460,9 @@ private:
 
             case RI: {
               auto register_code = register_dictionary[*word_part++];
-              auto command_modificator = (unsigned)stoi(*word_part++);
+              auto command_modificator = isdigit((*word_part)[0]) ? (unsigned)stoi(*word_part++) : 0; //TODO:draft modificator presence check
               memory.insert(curr_word++, current_command.first | (register_code << 8u) |
                                     (command_modificator << 12u));
-              //decode_word(*(curr_word-1), RI);
-              //unsigned lead_bit_mask = *(curr_word-1) >> 31u ? 4095u << 20u : 0;
-              //cout << (signed int)((*(curr_word-1) >> 12u) | lead_bit_mask) << endl; //TODO: why it did not work: "(*(curr_word-1) >> 31u) ? 4095u << 20u : 0u) << endl;" ?
               break;
             }
 
@@ -515,7 +522,7 @@ public:
   /* End of 'FUPM2' constructor */
 
   /**
-   * get_mem_info gives inforamtion about reserved memory size, used memory size and registers values.
+   * get_mem_info gives information about reserved memory size, used memory size and registers values.
    */
   void get_mem_info() {
     cout << "Memory reserved: " << memory.capacity() << endl;
@@ -537,7 +544,6 @@ public:
       unsigned curr_comm = memory[r[15]];
       switch (curr_comm & 255u) {
         case HALT: {
-          cout << "HALT" << endl;
           return;
         }
 
@@ -594,35 +600,30 @@ public:
         }
 
         case ADD: {
-          cout << "ADD" << endl;
           r[get_RR_first_reg_num(curr_comm)] += r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case ADDI: {
-          cout << "ADDI" << endl;
           r[get_RI_reg_num(curr_comm)] += get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case SUB: {
-          cout << "SUB" << endl;
           r[get_RR_first_reg_num(curr_comm)] -= r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case SUBI: {
-          cout << "SUBI" << endl;
           r[get_RI_reg_num(curr_comm)] -= get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case MUL: {
-          cout << "MUL" << endl;
           long long tmp = r[get_RR_first_reg_num(curr_comm)] *
                           ((long long)r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           cast_lli_to_two_int(tmp, r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]);
@@ -631,7 +632,6 @@ public:
         }
 
         case MULI: {
-          cout << "MULI" << endl;
           long long tmp = (long long)r[get_RI_reg_num(curr_comm)] * get_RI_operand(curr_comm);
           cast_lli_to_two_int(tmp, r[get_RI_reg_num(curr_comm)], r[get_RI_reg_num(curr_comm) + 1]);
           r[15]++;
@@ -639,7 +639,6 @@ public:
         }
 
         case DIV: {
-          cout << "DIV" << endl;
           lldiv_t result = div(cast_two_int_to_lli(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]),
                                (long long)r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[get_RR_first_reg_num(curr_comm)] = result.quot;
@@ -649,7 +648,6 @@ public:
         }
 
         case DIVI: {
-          cout << "DIVI" << endl;
           lldiv_t result = div(cast_two_int_to_lli(r[get_RI_reg_num(curr_comm)], r[get_RI_reg_num(curr_comm) + 1]),
                                (long long)get_RI_operand(curr_comm));
           r[get_RI_reg_num(curr_comm)] = result.quot;
@@ -659,14 +657,12 @@ public:
         }
 
         case LC: {
-          cout << "LC" << endl;
           r[get_RI_reg_num(curr_comm)] = get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case SHL: {
-          cout << "SHL" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] <<
                                                (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
@@ -674,14 +670,12 @@ public:
         }
 
         case SHLI: {
-          cout << "SHLI" << endl;
           r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] << (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case SHR: {
-          cout << "SHR" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] >>
                                                (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
@@ -689,14 +683,12 @@ public:
         }
 
         case SHRI: {
-          cout << "SHRI" << endl;
           r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] >> (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case AND: {
-          cout << "AND" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] &
                                                (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
@@ -704,14 +696,12 @@ public:
         }
 
         case ANDI: {
-          cout << "ANDI" << endl;
           r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] & (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case OR: {
-          cout << "OR" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] |
                                                (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
@@ -719,14 +709,12 @@ public:
         }
 
         case ORI: {
-          cout << "ORI" << endl;
           r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] | (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case XOR: {
-          cout << "XOR" << endl;
           r[get_RR_first_reg_num(curr_comm)] = (unsigned)r[get_RR_first_reg_num(curr_comm)] ^
                                                (unsigned)(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           r[15]++;
@@ -734,28 +722,24 @@ public:
         }
 
         case XORI: {
-          cout << "XORI" << endl;
           r[get_RI_reg_num(curr_comm)] = (unsigned)r[get_RI_reg_num(curr_comm)] ^ (unsigned)get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case NOT: {
-          cout << "NOT" << endl;
           r[get_RI_reg_num(curr_comm)] = ~((unsigned)r[get_RI_reg_num(curr_comm)]);
           r[15]++;
           break;
         }
 
         case MOV: {
-          cout << "MOV" << endl;
           r[get_RR_first_reg_num(curr_comm)] = r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case ADDD: {
-          cout << "ADDD" << endl;
           double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) +
                           cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
                           get_RR_operand(curr_comm);
@@ -765,7 +749,6 @@ public:
         }
 
         case SUBD: {
-          cout << "SUBD" << endl;
           double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) -
                           ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
                             get_RR_operand(curr_comm) );
@@ -775,7 +758,6 @@ public:
         }
 
         case MULD: {
-          cout << "MULD" << endl;
           double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) *
                           ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
                             get_RR_operand(curr_comm) );
@@ -785,7 +767,6 @@ public:
         }
 
         case DIVD: {
-          cout << "DIVD" << endl;
           double result = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm) + 1]) /
                           ( cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm) + 1]) +
                             get_RR_operand(curr_comm) );
@@ -795,7 +776,6 @@ public:
         }
 
         case ITOD: {
-          cout << "ITOD" << endl;
           auto tmp = double(r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm));
           cast_double_to_two_int(tmp,
                                  r[get_RR_first_reg_num(curr_comm)],
@@ -805,7 +785,6 @@ public:
         }
 
         case DTOI: {
-          cout << "DTOI" << endl;
           auto tmp = cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)],
                                             r[get_RR_second_reg_num(curr_comm) + 1]) + get_RR_operand(curr_comm);
           r[get_RR_first_reg_num(curr_comm)] = (int)tmp;
@@ -814,42 +793,36 @@ public:
         }
 
         case PUSH: {
-          cout << "PUSH" << endl;
           memory[--r[14]] = r[get_RI_reg_num(curr_comm)] + get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case POP: {
-          cout << "POP" << endl;
           r[get_RI_reg_num(curr_comm)] = memory[r[14]++] + get_RI_operand(curr_comm);
           r[15]++;
           break;
         }
 
         case CALL: {
-          cout << "CALL" << endl;
           memory[--r[14]] = r[get_RR_first_reg_num(curr_comm)] = r[15] + 1;
           r[15] = r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm);
           break;
         }
 
         case CALLI: {
-          cout << "CALLI" << endl;
           memory[--r[14]] = r[15] + 1;
           r[15] = get_J_operand(curr_comm);
           break;
         }
 
         case RET: {
-          cout << "RET" << endl;
           r[15] = memory[r[14]++];
           r[14] += get_J_operand(curr_comm);
           break;
         }
 
         case CMP: {
-          cout << "CMP" << endl;
           if (r[get_RR_first_reg_num(curr_comm)] == r[get_RR_second_reg_num(curr_comm)]) {
             flags = 0;
           }
@@ -864,7 +837,6 @@ public:
         }
 
         case CMPI: {
-          cout << "CMPI" << endl;
           if (r[get_RI_reg_num(curr_comm)] == get_RI_operand(curr_comm)) {
             flags = 0;
           }
@@ -879,7 +851,6 @@ public:
         }
 
         case CMPD: {
-          cout << "CMPD" << endl;
           double first = cast_two_int_to_double(r[get_RR_first_reg_num(curr_comm)], r[get_RR_first_reg_num(curr_comm ) + 1]);
           double second = cast_two_int_to_double(r[get_RR_second_reg_num(curr_comm)], r[get_RR_second_reg_num(curr_comm ) + 1]) +
                           get_RR_operand(curr_comm);
@@ -897,13 +868,11 @@ public:
         }
 
         case JMP: {
-          cout << "JMP" << endl;
           r[15] = get_J_operand(curr_comm);
           break;
         }
 
         case JNE: {
-          cout << "JNE" << endl;
           if (flags != 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -914,7 +883,6 @@ public:
         }
 
         case JEQ: {
-          cout << "JEQ" << endl;
           if (flags == 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -925,7 +893,6 @@ public:
         }
 
         case JLE: {
-          cout << "JLE" << endl;
           if (flags <= 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -936,7 +903,6 @@ public:
         }
 
         case JL: {
-          cout << "JL" << endl;
           if (flags < 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -947,7 +913,6 @@ public:
         }
 
         case JGE: {
-          cout << "JGE" << endl;
           if (flags >= 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -958,7 +923,6 @@ public:
         }
 
         case JG: {
-          cout << "JG" << endl;
           if (flags > 0) {
             r[15] = get_J_operand(curr_comm);
           }
@@ -969,21 +933,18 @@ public:
         }
 
         case LOAD: {
-          cout << "LOAD" << endl;
           r[get_RM_reg_num(curr_comm)] = memory[get_RM_operand(curr_comm)];
           r[15]++;
           break;
         }
 
         case STORE: {
-          cout << "STORE" << endl;
           memory[get_RM_operand(curr_comm)] = r[get_RM_reg_num(curr_comm)];
           r[15]++;
           break;
         }
 
         case LOAD2: {
-          cout << "LOAD2" << endl;
           r[get_RM_reg_num(curr_comm)] = memory[get_RM_operand(curr_comm)];
           r[get_RM_reg_num(curr_comm) + 1] = memory[get_RM_operand(curr_comm) + 1];
           r[15]++;
@@ -991,7 +952,6 @@ public:
         }
 
         case STORE2: {
-          cout << "STORE2" << endl;
           memory[get_RM_operand(curr_comm)] = r[get_RM_reg_num(curr_comm)];
           memory[get_RM_operand(curr_comm) + 1] = r[get_RM_reg_num(curr_comm) + 1];
           r[15]++;
@@ -999,21 +959,18 @@ public:
         }
 
         case LOADR: {
-          cout << "LOADR" << endl;
           r[get_RR_first_reg_num(curr_comm)] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)];
           r[15]++;
           break;
         }
 
         case STORER: {
-          cout << "STORER" << endl;
           memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)] = r[get_RR_first_reg_num(curr_comm)];
           r[15]++;
           break;
         }
 
         case LOADR2: {
-          cout << "LOADR2" << endl;
           r[get_RR_first_reg_num(curr_comm)] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)];
           r[get_RR_first_reg_num(curr_comm) + 1] = memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm) + 1];
           r[15]++;
@@ -1021,7 +978,6 @@ public:
         }
 
         case STORER2: {
-          cout << "STORER2" << endl;
           memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm)] = r[get_RR_first_reg_num(curr_comm)];
           memory[r[get_RR_second_reg_num(curr_comm)] + get_RR_operand(curr_comm) + 1] = r[get_RR_first_reg_num(curr_comm) + 1];
           r[15]++;
