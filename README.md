@@ -1,3 +1,1 @@
-#FUPM2
-
-Simple big numbers work program
+# Simple big numbers work program
