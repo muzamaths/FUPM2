@@ -1,1 +1,1 @@
-# Simple big numbers work program
+# Simple Fon-Newman machine emulator
