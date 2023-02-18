@@ -1,0 +1,29 @@
+matrix_sum:
+lc r0 0
+loadr r1 r14 0    ;r1 = array - current line pointer
+loadr r2 r14 1    ;r2 = n
+loadr r3 r14 2    ;r3 = m
+
+sum_line:
+loadr r4 r1 0     ;pointer to the element of the current line
+
+L0:
+loadr r5 r4 0     ;current element
+add r0 r5 0
+subi r3 1
+cmpi r3 0
+jeq get_line
+addi r4 1
+jmp L0
+
+get_line:
+subi r2 1
+cmpi r2 0
+jeq finish
+addi r1 1         ;next line
+loadr r3 r14 2    ;r3 = m
+jmp sum_line
+
+finish:
+ret r0 0
+

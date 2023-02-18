@@ -1,0 +1,24 @@
+print3:
+    syscall r7 102
+    lc r0 10
+    syscall r0 105
+    ret 0
+print34:
+    syscall r3 102
+    lc r0 10
+    syscall r0 105
+    syscall r4 102
+    syscall r0 105
+    ret 0
+exit:
+    lc r0 0
+    syscall r0 0
+main:
+    lc r3 31415
+    lc r4 271828
+    mul r3 r4 0
+    calli print34
+    lc r5 print34
+    call r5 r5
+    calli exit
+    end main

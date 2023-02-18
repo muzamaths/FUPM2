@@ -1,0 +1,38 @@
+fout:
+syscall r1 102
+lc r0 10
+syscall r0 105
+ret 0
+
+main: lc r1 107
+lc r2 90
+lc r3 86
+lc r4 115
+
+and r1 r2 0
+calli fout
+
+xori r2 7
+syscall r2 102
+lc r0 10
+syscall r0 105
+
+andi r1 93
+calli fout
+
+ori r1 6
+calli fout
+
+or r1 r3 0
+calli fout
+
+xor r1 r4 0
+calli fout
+
+xori r1 99
+calli fout
+
+not r1 15
+calli fout
+
+end main

@@ -1,0 +1,28 @@
+start:
+syscall r0 101
+syscall r2 101
+cmpd r0 r2 0
+jg first
+jl second
+jeq equal ; Hi everybody
+
+;lol keks
+;tbounudl asdf
+
+first:
+syscall r0 103
+jmp final
+
+second: 
+syscall r2 103
+jmp final
+
+equal:
+lc r0 100500
+syscall r0 102
+jmp final
+
+final:
+halt r0
+
+end start

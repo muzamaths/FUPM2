@@ -1,0 +1,39 @@
+fout:
+syscall r1 102
+lc r0 10
+syscall r0 105
+ret 0
+
+main:
+syscall r5 100
+syscall r2 100 
+mov r1 r5 5
+calli fout
+
+add r1 r2 3
+calli fout
+
+addi r1 5
+calli fout
+
+sub r1 r2 5
+calli fout
+
+subi r1 5
+calli fout
+
+mul r1 r2 1
+calli fout
+
+muli r1 3
+calli fout
+
+addi r1 1
+calli fout
+
+div r1 r5 0
+calli fout
+mov r1 r2 0
+calli fout
+
+end main
